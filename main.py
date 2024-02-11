@@ -116,6 +116,7 @@ class NYTCrosswordBot:
             actions.send_keys(answer)
             actions.perform()
             time.sleep(0.05)
+        time.sleep(300)
 
 
 if __name__ == "__main__":
