@@ -1,14 +1,16 @@
-import time
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
-import undetected_chromedriver as uc
 import time
 import undetected_chromedriver as uc
 from openai import OpenAI
 from selenium.webdriver.common.action_chains import ActionChains
 import json
-
+import re
+from selenium.webdriver.chrome.options import Options
+from selenium import webdriver
+from selenium.webdriver.common.keys import Keys
+import time
 
 class NYTCrosswordBot:
     """
@@ -36,11 +38,13 @@ class NYTCrosswordBot:
         """
         self.url = url
         self.api_key = api_key
-        self.driver = uc.Chrome(executable_path="/Applications/Google_Chrome.app")
+        chrome_options = Options()
+        chrome_options.add_argument("--start-maximized")    
+        self.driver = uc.Chrome(chrome_options=chrome_options)
         self.wait = WebDriverWait(self.driver, 5)
- 
+
     def run_solver(self) -> None:
-        """Runs the puzzle software with the initalized configurations."""
+        """Runs the puzzle software with the initialized configurations."""
         self.launch_crossword(self.url)
         clue_list = self.scrape_clues()
         answer_list = self.query_chatgpt(clue_list)
@@ -55,8 +59,12 @@ class NYTCrosswordBot:
         """
         self.driver.get(url)
 
-        find_start = self.wait.until(EC.presence_of_element_located((By.CLASS_NAME, "xwd__modal--subtle-button")))
-        find_start = self.driver.find_element(By.CLASS_NAME, "xwd__modal--subtle-button")
+        find_start = self.wait.until(
+            EC.presence_of_element_located((By.CLASS_NAME, "xwd__modal--subtle-button"))
+        )
+        find_start = self.driver.find_element(
+            By.CLASS_NAME, "xwd__modal--subtle-button"
+        )
         find_start.click()
 
     def scrape_clues(self) -> list[str]:
@@ -69,12 +77,35 @@ class NYTCrosswordBot:
         Returns:
             list[str]: List of crossword hints from first to last (top to bottom).
         """
-        find_clues = self.wait.until(EC.presence_of_element_located(("xpath", "//span[@class='xwd__clue--text xwd__clue-format']")))
-        find_clues = self.driver.find_elements(By.XPATH, "//span[@class='xwd__clue--text xwd__clue-format']")
+        find_clues = self.wait.until(
+            EC.presence_of_element_located(
+                ("xpath", "//span[@class='xwd__clue--text xwd__clue-format']")
+            )
+        )
+        find_clues = self.driver.find_elements(
+            By.XPATH, "//span[@class='xwd__clue--text xwd__clue-format']"
+        )
 
         clue_list = []
-        for clue_html in find_clues:
+        answer_lengths = []
+        for clue_html in find_clues[:5]:
             clue_list.append(clue_html.text)
+            try:
+                clue_html.click()
+                time.sleep(0.01)
+                find_clues = self.driver.find_element(By.ID, "cell-id-0")
+                answer_lengths.append(
+                    re.search(
+                        r"Answer:\s*(\d+)", find_clues.get_attribute("aria-label")
+                    ).group(1)
+                )
+                time.sleep(0.01)
+            except:
+                continue
+        for index, one in enumerate(answer_lengths):
+            clue_list[index] = (
+                clue_list[index] + f", Answer length: {answer_lengths[index]}"
+            )
         return clue_list
 
     def query_chatgpt(self, clues: list[str]) -> list[str]:
@@ -87,12 +118,18 @@ class NYTCrosswordBot:
         client = OpenAI(api_key=self.api_key)
 
         completion = client.chat.completions.create(
-        model="gpt-3.5-turbo",
-        messages=[
-            {"role": "system", "content": """You are a crossword puzzle solver. You are fed a list of crossword clues, 
-            and output the answers as a json list of the answers as strings, in order, and nothing else. For example, ["apple", "dog", "frog"].""" },
-            {"role": "user", "content": f"Solve this crossword:{str(clues)}"}
-        ]
+            model="gpt-3.5-turbo",
+            messages=[
+                {
+                    "role": "system",
+                    "content": """You are a crossword puzzle solver. You are fed a list of crossword clues, the lengths of each answer,
+            and output the answers as a json list of the answers as strings, in order, and nothing else. For example, ["apple", "dog", "frog"].""",
+                },
+                {
+                    "role": "user",
+                    "content": f"Solve this crossword:{str(clues)}. Pay attention to the answer lengths. If a clue references another clue, take that into consideration.",
+                },
+            ],
         )
 
         api_response = (completion.choices[0].message).content
@@ -106,21 +143,31 @@ class NYTCrosswordBot:
         Args:
             answers (list[str]): Answers to crossword hints, from top to bottom, starting with horizontal
         """
-        find_clues = self.wait.until(EC.presence_of_element_located(("xpath", "//span[@class='xwd__clue--text xwd__clue-format']")))
-        find_clues = self.driver.find_elements(By.XPATH, "//span[@class='xwd__clue--text xwd__clue-format']")
+        find_clues = self.wait.until(
+            EC.presence_of_element_located(
+                ("xpath", "//span[@class='xwd__clue--text xwd__clue-format']")
+            )
+        )
+        find_clues = self.driver.find_elements(
+            By.XPATH, "//span[@class='xwd__clue--text xwd__clue-format']"
+        )
 
-        for clues, answer in zip(find_clues, answers):
-            clues.click()
-            time.sleep(0.05)
-            actions = ActionChains(self.driver)
-            actions.send_keys(answer)
-            actions.perform()
-            time.sleep(0.05)
+        for clues, answer in zip(find_clues[:5], answers[:5]):
+            try:
+                clues.click()
+                time.sleep(0.05)
+                actions = ActionChains(self.driver)
+                actions.send_keys(answer)
+                actions.perform()
+                time.sleep(0.05)
+            except:
+                continue
         time.sleep(300)
 
 
 if __name__ == "__main__":
     url = "https://www.nytimes.com/crosswords/game/special/themed-mini"
+    #url = "https://www.nytimes.com/crosswords/game/mini"
     key = ""
     solver = NYTCrosswordBot(url=url, api_key=key)
     solver.run_solver()

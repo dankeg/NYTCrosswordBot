@@ -14,6 +14,6 @@ If not, a 300 second wait will keep the chrome browser alive, and let you fix an
 
 ## Run Instructions
 1. Clone the repository
-2. Download the dependencies using `pip install -r requirements.txt"
+2. Download the dependencies using `pip install -r requirements.txt`
 3. Under `if __name__ == "__main__":`, replace the `url` and `key` fields with the puzzle URL, and the API key
 4. Execute the script, and wait!
